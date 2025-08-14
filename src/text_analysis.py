@@ -1,10 +1,13 @@
 import hashlib
 import time
+from datetime import datetime
 from functools import lru_cache
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 from pydantic import BaseModel, Field, field_validator
+from sqlalchemy import create_engine, Column, String, Integer, DateTime, Float
+from sqlalchemy.orm import sessionmaker, declarative_base, Session
 from transformers import pipeline
 
 app = FastAPI()
@@ -12,6 +15,43 @@ app = FastAPI()
 MODEL_NAME = "distilbert/distilbert-base-uncased-finetuned-sst-2-english"
 
 sentiment_pipeline = pipeline("text-classification", model=MODEL_NAME, device=-1)
+
+engine = create_engine("sqlite:///./text_analysis.db")
+Base = declarative_base()
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+
+class AnalysisCache(Base):
+    __tablename__ = "analysis_cache"
+
+    text_hash = Column(String, primary_key=True)
+    text = Column(String)
+    word_count = Column(Integer)
+    sentiment = Column(String)
+    processing_time_ms = Column(Float)
+    created_at = Column(DateTime, default=datetime.now())
+
+
+Base.metadata.create_all(bind=engine)
+
+
+def _get_from_db_cache(text_hash: str, db: Session) -> Optional[str]:
+    cached = db.query(AnalysisCache).filter(AnalysisCache.text_hash == text_hash).first()
+    return cached.sentiment if cached else None
+
+
+def _save_to_db_cache(text_hash: str, text: str, sentiment: str, db: Session) -> None:
+    analysis = AnalysisCache(text_hash=text_hash, text=text[:500], sentiment=sentiment, word_count=len(text.split()), processing_time_ms=0)
+    db.add(analysis)
+    db.commit()
+
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
 
 class WordCountResponse(BaseModel):
@@ -34,12 +74,16 @@ class WordCountRequest(BaseModel):
         return v
 
 
-def _count_words(text: str) -> WordCountResponse:
+def _count_words(text: str, db) -> WordCountResponse:
     text_length = len(text)
     word_count = len(text.split())
 
+    # TODO: not yet optimum, should be Memory → Disk → Compute
     text_hash = hashlib.md5(text.encode(), usedforsecurity=False).hexdigest()
-    sentiment = _cached_sentiment(text_hash, text)
+    sentiment = _get_from_db_cache(text_hash, db)
+    if not sentiment:
+        sentiment = _cached_sentiment(text_hash, text)
+        _save_to_db_cache(text_hash, text, sentiment, db)
 
     return WordCountResponse(word_count=word_count, text_length=text_length, sentiment=sentiment)
 
@@ -51,10 +95,10 @@ def _cached_sentiment(_text_hash: str, text: str) -> str:
 
 
 @app.post("/count/words")
-def count_words(request: WordCountRequest, dev: bool = False) -> WordCountResponse:
+def count_words(request: WordCountRequest, dev: bool = False, db: Session = Depends(get_db)) -> WordCountResponse:
     try:
         start_time = time.time()
-        result = _count_words(request.text)
+        result = _count_words(request.text, db)
         if dev:
             total_time = time.time() - start_time
             result.timing_info = {
@@ -70,6 +114,12 @@ def count_words(request: WordCountRequest, dev: bool = False) -> WordCountRespon
 @app.get("/health")
 def health():
     return "ok"
+
+
+@app.get("/analytics")
+def get_analytics(db: Session = Depends(get_db)):
+    total_requests = db.query(AnalysisCache).count()
+    return {"total_requests": total_requests, "cache_size": total_requests}
 
 
 if __name__ == "__main__":

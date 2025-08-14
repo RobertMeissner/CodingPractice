@@ -5,6 +5,7 @@ description = "Add your description here"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.104.0",
+    "sqlalchemy>=2.0.43",
     "torch>=2.8.0",
     "transformers>=4.55.2",
     "uvicorn>=0.24.0",
