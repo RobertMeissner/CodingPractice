@@ -19,7 +19,7 @@ health:
 
 test_text:
 	curl -X 'POST' \
-  'http://127.0.0.1:8000/count/words' \
+  'http://127.0.0.1:8000/count/words?dev=true' \
   -H 'accept: application/json' \
   -H 'Content-Type: application/json' \
   -d '{  "text": "test"}'
