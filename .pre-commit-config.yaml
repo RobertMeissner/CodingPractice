@@ -24,7 +24,7 @@ repos:
       - id: mypy
         verbose: true
         # TODO: Make automatic
-        # stages: [manual]
+        stages: [manual]
         args: [--strict, --ignore-missing-imports, --show-error-codes]
         additional_dependencies: [types-requests, types-PyYAML]
 
