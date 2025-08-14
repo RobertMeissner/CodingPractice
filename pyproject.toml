@@ -1,0 +1,12 @@
+[project]
+name = "hackerrank"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.12"
+dependencies = []
+
+[tool.uv]
+dev-dependencies = [
+    "pre-commit>=4.3.0",
+    "pytest>=8.4.1",
+]
