@@ -23,3 +23,7 @@ test_text:
   -H 'accept: application/json' \
   -H 'Content-Type: application/json' \
   -d '{  "text": "test"}'
+
+ollama-pull:
+	ollama pull llama3.2
+	ollama pull nomic-embed-text

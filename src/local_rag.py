@@ -1,66 +1,64 @@
-import os
-
 import numpy as np
 from dotenv import load_dotenv
-from mistralai import Mistral
+import ollama
 
 load_dotenv()
 
 
 def document_based_answer(question: str, documents: list[dict]) -> str:
-    with Mistral(
-        api_key=os.getenv("MISTRAL_API_KEY", ""),
-    ) as mistral:
-        # retrieval
-        # semantic embeddings
-        # cfidf = inverted document frequency
-        # similarity between question und doc#i, top3
+    # retrieval
+    # semantic embeddings
+    # cfidf = inverted document frequency
+    # similarity between question und doc#i, top3
 
-        # 1000 documents, vector database, postgres, pgvector
-        res = mistral.embeddings.create(model="mistral-embed", inputs=[question, *[doc["title"] for doc in documents]])
+    # 1000 documents, vector database, postgres, pgvector
+    question_embedding = ollama.embeddings(model="nomic-embed-text", prompt=question)["embedding"]
 
-        similarities = []
-        for element in res.data[1:]:
-            similarities.append(
-                np.dot(res.data[0].embedding, element.embedding)
-                / (np.linalg.norm(res.data[0].embedding) * np.linalg.norm(element.embedding))
-            )
+    doc_embeddings = []
+    for doc in documents:
+        doc_embedding = ollama.embeddings(model="nomic-embed-text", prompt=doc["title"])["embedding"]
+        doc_embeddings.append(doc_embedding)
+
+    similarities = []
+    for doc_embedding in doc_embeddings:
+        similarities.append(
+            np.dot(question_embedding, doc_embedding) / (np.linalg.norm(question_embedding) * np.linalg.norm(doc_embedding))
+        )
 
         # map similarity to index
 
-        print(similarities)
-        # to give to the Gen
-        suitable_document, best_similarity = max(zip(documents, similarities), key=lambda x: x[1])
-        print(suitable_document["content"])
+    # print(similarities)
+    # to give to the Gen
+    suitable_document, best_similarity = max(zip(documents, similarities), key=lambda x: x[1])
+    # print(suitable_document["content"])
 
-        # rerank
-        # if best_similarity > 0.8:
-        # Gen
-        # isntead of system -> user mostly (depends on LLM)
-        answer = mistral.chat.complete(
-            model="mistral-small-latest",
-            messages=[
-                {
-                    "content": "Instructions. Parse the following documents. After the documents, you will find a question. Parse the question and answer based on the documents only. If you cannot answer based on the documents, yield only 'Sorry.'",
-                    "role": "system",
-                },
-                {"content": suitable_document["content"], "role": "system"},
-                {
-                    "content": question,
-                    "role": "user",
-                },
-            ],
-            stream=False,
-        )
+    # rerank
+    # if best_similarity > 0.8:
+    # Gen
+    # isntead of system -> user mostly (depends on LLM)
+    response = ollama.chat(
+        model="llama3.2",
+        messages=[
+            {
+                "content": "Instructions. Parse the following documents. After the documents, you will find a question. Parse the question and answer based on the documents only. If you cannot answer based on the documents, yield only 'Sorry.'",
+                "role": "system",
+            },
+            {"content": suitable_document["content"], "role": "system"},
+            {
+                "content": question,
+                "role": "user",
+            },
+        ],
+    )
 
-        # Handle response
-        return answer.choices[0].message.content
+    # Handle response
+    return response["message"]["content"]
 
 
 if __name__ == "__main__":
     # system läuft, chunking, pgvector;
 
-    question = "How to fry eggs?"
+    question = "What is python?"
 
     # >1000 docs, embed all; report 500 Seiten
     SAMPLE_DOCUMENTS = [
