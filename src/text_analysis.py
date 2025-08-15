@@ -1,5 +1,7 @@
 import hashlib
+import random
 import time
+import uuid
 from datetime import datetime
 from functools import lru_cache
 from typing import Optional
@@ -109,6 +111,47 @@ def count_words(request: WordCountRequest, dev: bool = False, db: Session = Depe
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+documents: dict[str, dict] = {}
+
+
+class DocumentInput(BaseModel):
+    text: str
+    title: str
+
+
+class DocumentInputResponse(BaseModel):
+    doc_id: str
+
+
+class SimilarityResponse(BaseModel):
+    title: str
+    doc_id: str
+    similarity: float
+
+
+@app.post("/document")
+def add_document(doc: DocumentInput) -> DocumentInputResponse:
+    doc_id = str(uuid.uuid4())
+    documents[doc_id] = {"title": doc.title, "text": doc.text}
+    return DocumentInputResponse(doc_id=doc_id)
+
+
+@app.get("/similar/{doc_id}")
+def document_similarity(doc_id: str) -> SimilarityResponse:
+    if doc_id not in documents.keys():
+        raise HTTPException(status_code=400, detail=f"Document {doc_id} not found.")
+
+    # target = documents[doc_id]
+    similarities: list[SimilarityResponse] = []
+
+    for second_id, second_doc in documents.items():
+        if second_id != doc_id:
+            similarities.append(SimilarityResponse(title=second_doc["title"], doc_id=second_id, similarity=random.random()))
+
+    similarities.sort(key=lambda item: item.similarity, reverse=True)
+    return similarities[0]
 
 
 @app.get("/health")
