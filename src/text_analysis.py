@@ -1,13 +1,14 @@
 import hashlib
-import random
 import time
 import uuid
 from datetime import datetime
 from functools import lru_cache
 from typing import Optional
+import numpy as np
 
 from fastapi import FastAPI, HTTPException, Depends
 from pydantic import BaseModel, Field, field_validator
+from sentence_transformers import SentenceTransformer
 from sqlalchemy import create_engine, Column, String, Integer, DateTime, Float
 from sqlalchemy.orm import sessionmaker, declarative_base, Session
 from transformers import pipeline
@@ -138,6 +139,15 @@ def add_document(doc: DocumentInput) -> DocumentInputResponse:
     return DocumentInputResponse(doc_id=doc_id)
 
 
+semantic_model = SentenceTransformer("all-MiniLM-L6-v2", device="cpu")
+
+
+def semantic_similarity(text1: str, text2: str) -> float:
+    embeddings = semantic_model.encode([text1, text2])
+    cosine = np.dot(embeddings[0], embeddings[1]) / (np.linalg.norm(embeddings[0]) * np.linalg.norm(embeddings[1]))
+    return cosine
+
+
 @app.get("/similar/{doc_id}")
 def document_similarity(doc_id: str) -> SimilarityResponse:
     if doc_id not in documents.keys():
@@ -148,7 +158,13 @@ def document_similarity(doc_id: str) -> SimilarityResponse:
 
     for second_id, second_doc in documents.items():
         if second_id != doc_id:
-            similarities.append(SimilarityResponse(title=second_doc["title"], doc_id=second_id, similarity=random.random()))
+            similarities.append(
+                SimilarityResponse(
+                    title=second_doc["title"],
+                    doc_id=second_id,
+                    similarity=semantic_similarity(second_doc["text"], documents[doc_id]["text"]),
+                )
+            )
 
     similarities.sort(key=lambda item: item.similarity, reverse=True)
     return similarities[0]
